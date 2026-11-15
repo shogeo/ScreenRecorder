@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\recording.ico</ApplicationIcon>
+    <AssemblyName>Recording</AssemblyName>
+    <RootNamespace>Recording</RootNamespace>
+    <Version>1.0.0</Version>
+    <Authors>Georgiy S.</Authors>
+    <Copyright>Copyright (c) 2026 Georgiy S.</Copyright>
+    <Description>Background Windows screen recorder with global hotkeys, stereo audio and a glass recording indicator.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/shogeo/ScreenRecorder</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <DefaultItemExcludes>$(DefaultItemExcludes);.tools\**;dist\**;tests\**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ScreenRecorderLib" Version="7.0.1" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="SharpDX.DXGI" Version="4.2.0" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Web" />
+  </ItemGroup>
+</Project>

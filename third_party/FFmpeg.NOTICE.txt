@@ -1,0 +1,10 @@
+FFmpeg 9.0.2 essentials build from https://www.gyan.dev/ffmpeg/builds/
+This app invokes FFmpeg as a separate process for Desktop Duplication capture,
+H.264 NVIDIA NVENC video encoding and AAC audio encoding. The distributed build
+is licensed under GNU GPL version 3; see FFmpeg.LICENSE.txt.
+
+Unmodified binary package used:
+https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
+Corresponding source provided by the build distributor:
+https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2.tar.xz
+Upstream: https://ffmpeg.org/
