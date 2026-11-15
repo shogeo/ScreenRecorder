@@ -16,11 +16,12 @@ inherit the previous session's sound mode.
 
 ## Overlay and tray
 
-The indicator is positioned in the primary monitor's top-right working area before
-it is shown. The red dot, elapsed time, speaker/microphone states, and stop button
-are visible while starting, recording, and finalizing. There are no hover tooltips
-or hover-driven panel movement. Small glass buttons retain their input animation,
-and dismissal uses a brief compression.
+The indicator is painted before it slides down into the primary monitor's top-right
+working area. The red dot, elapsed time, speaker/microphone states, and stop button
+are visible while starting and recording. There are no hover tooltips
+or hover-driven panel movement. Small glass buttons retain their input animation.
+On stop, the indicator displays **Saving…** and immediately slides up. Both transitions respect the Windows
+client-area animation setting.
 
 The app asks Windows to exclude its HUD and menu from capture. Capture exclusion
 and glass effects are platform-dependent. Topmost restoration does not elevate

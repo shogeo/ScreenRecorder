@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 namespace Recording
 {
-    internal sealed class IndicatorWindow : NativeGlassWindow
+    internal sealed partial class IndicatorWindow : NativeGlassWindow
     {
         private readonly RecorderButton system, mic, stop;
         private string timer = "00:00";
@@ -16,6 +16,7 @@ namespace Recording
         internal IndicatorWindow(Action<Command> command) : base(true,264,44)
         {
             Text = "Recording indicator";
+            slideTimer.Tick += SlideFrame;
             visibilityCallback = VisibilityChanged;
             system = new RecorderButton(0) { AccessibleName = "Toggle system audio" };
             mic = new RecorderButton(1) { AccessibleName = "Toggle microphone" };
@@ -29,19 +30,27 @@ namespace Recording
         }
         internal void Place(Screen screen)
         {
-            CancelDismiss();
             var area = screen.WorkingArea;
             ClientSize = new Size(S(264),S(44));
-            Location = new Point(area.Right-16-Width,area.Top+16);
-            var handle = Handle;
+            rest = new Point(area.Right-16-Width,area.Top+16);
+            outsideY = screen.Bounds.Top-Height;
+            // Keep the transition off any monitor stacked above the recording display.
+            var travel = new Rectangle(rest.X, outsideY, Width, screen.Bounds.Top-outsideY);
+            foreach (var other in Screen.AllScreens)
+            {
+                if (!other.Bounds.IntersectsWith(travel)) continue;
+                outsideY = screen.Bounds.Top;
+                break;
+            }
+            if (!Visible) Location = rest;
+            _ = Handle;
         }
         internal void UpdateState(CaptureSession session)
         {
             string next = session.State == CaptureState.Starting ? "Starting…" : session.State == CaptureState.Finishing ? "Saving…" : MainWindow.TimeText(session.Elapsed);
-            if (next != timer) { timer = next; Invalidate(); }
+            if (next != timer) { timer = next; Invalidate(new Rectangle(S(29), 0, S(88), ClientSize.Height)); }
             system.Active = session.Audio.System;
             mic.Active = session.Audio.Mic;
-            system.Enabled = mic.Enabled = stop.Enabled = session.State != CaptureState.Finishing;
         }
         internal void SetRecordingPresence(bool required)
         {
@@ -49,7 +58,6 @@ namespace Recording
             recordingPresence = required;
             if (required)
             {
-                CancelDismiss();
                 int enabled = 1;
                 DwmSetWindowAttribute(Handle,11,ref enabled,4); // No taskbar Peek preview.
                 DwmSetWindowAttribute(Handle,12,ref enabled,4); // Keep visible during Peek.
@@ -63,11 +71,25 @@ namespace Recording
         internal void EnsureVisibleAboveAll()
         {
             if (!recordingPresence || IsDisposed || Disposing || !IsHandleCreated) return;
-            if (!Visible) Show();
+            if (!Visible) ShowForRecording();
             if (IsIconic(Handle)) ShowWindow(Handle,4); // Restore without taking focus.
+            if (!IsWindowVisible(Handle)) ShowWindow(Handle,4);
             // Reassert the top of the topmost band, including above borderless fullscreen.
             // No activation, no geometry change, no foreground-window changes.
-            SetWindowPos(Handle,(IntPtr)(-1),0,0,0,0,0x0001|0x0002|0x0010|0x0040|0x0200);
+            if ((GetWindowLong(Handle, -20) & 0x0008) == 0 || IsCovered())
+                SetWindowPos(Handle,(IntPtr)(-1),0,0,0,0,0x0001|0x0002|0x0010|0x0200);
+        }
+        private bool IsCovered()
+        {
+            // Avoid reordering a window that is already unobscured on every capture tick.
+            var bounds = Bounds;
+            for (IntPtr above = GetWindow(Handle, 3); above != IntPtr.Zero; above = GetWindow(above, 3))
+            {
+                if (!IsWindowVisible(above) || IsIconic(above) || !GetWindowRect(above, out var rect)) continue;
+                if (!bounds.IntersectsWith(Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom))) continue;
+                if (DwmGetWindowAttribute(above, 14, out int cloaked, 4) != 0 || cloaked == 0) return true;
+            }
+            return false;
         }
         private void VisibilityChanged(IntPtr hook,uint eventType,IntPtr window,int objectId,int childId,uint thread,uint time)
         {
@@ -117,7 +139,12 @@ namespace Recording
         protected override void Dispose(bool disposing)
         {
             recordingPresence = false;
-            if (disposing) ReleaseVisibilityHooks();
+            if (disposing)
+            {
+                ReleaseVisibilityHooks();
+                slideTimer.Dispose();
+                dismissal?.TrySetResult(true);
+            }
             base.Dispose(disposing);
         }
         protected override void PaintSurface(Graphics g)
@@ -128,12 +155,18 @@ namespace Recording
         }
         private delegate void WinEventCallback(IntPtr hook,uint eventType,IntPtr window,int objectId,int childId,uint thread,uint time);
         [StructLayout(LayoutKind.Sequential)] private struct WindowPosition { public IntPtr Window,InsertAfter; public int X,Y,Width,Height; public uint Flags; }
+        [StructLayout(LayoutKind.Sequential)] private struct WindowRect { public int Left, Top, Right, Bottom; }
         [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint first,uint last,IntPtr module,WinEventCallback callback,uint process,uint thread,uint flags);
         [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
         [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window,int command);
         [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out WindowRect rectangle);
+        [DllImport("user32.dll", EntryPoint="GetWindowLongW")] private static extern int GetWindowLong(IntPtr window, int index);
         [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr window,int attribute,ref int value,int size);
+        [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr window,int attribute,out int value,int size);
     }
     internal sealed class RecorderButton : GlassButton
     {
@@ -142,7 +175,6 @@ namespace Recording
         internal bool Active { get => active; set { if (active != value) { active = value; Invalidate(); } } }
         internal RecorderButton(int kind) { this.kind = kind; TabStop = false; }
         protected override float Radius => 8;
-        protected override bool DeferActivation => kind == 2;
         protected override int ContentRevision => active ? 1 : 0;
         protected override Color Tint => active ? Color.FromArgb(57,128,230) : Color.FromArgb(38,49,67);
         protected override void PaintContent(Graphics g,float width,float height)
@@ -150,25 +182,61 @@ namespace Recording
             var saved = g.Save();
             g.TranslateTransform(width/2,height/2);
             Color color = Enabled ? active ? Theme.Text : Theme.Muted : Color.FromArgb(75,90,109);
-            using (var pen = new Pen(color,1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+            using (var pen = new Pen(color,1.1f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
             {
                 if (kind == 0)
                 {
-                    g.DrawPolygon(pen,new[] { new PointF(-7,-3),new PointF(-4,-3),new PointF(1,-7),new PointF(1,7),new PointF(-4,3),new PointF(-7,3) });
-                    if (active) g.DrawArc(pen,-3,-6,12,12,-50,100);
-                    else g.DrawLine(pen,-7,-7,8,8);
+                    using (var speaker = new GraphicsPath())
+                    {
+                        speaker.AddPolygon(new[] { new PointF(-7,-3),new PointF(-4,-3),new PointF(1,-7),new PointF(1,7),new PointF(-4,3),new PointF(-7,3) });
+                        if (active)
+                        {
+                            for (int radius = 4; radius <= 10; radius += 3)
+                            {
+                                speaker.StartFigure();
+                                speaker.AddArc(2-radius,-radius,2*radius,2*radius,-50,100);
+                            }
+                        }
+                        else
+                        {
+                            speaker.StartFigure();
+                            speaker.AddLine(-7,-7,8,8);
+                        }
+
+                        DrawCenteredIcon(g,pen,speaker,0.78f);
+                    }
                 }
                 else if (kind == 1)
+                using (var microphone = Theme.Rounded(new RectangleF(-3,-8,6,11),3))
                 {
-                    using (var path = Theme.Rounded(new RectangleF(-3,-8,6,11),3)) g.DrawPath(pen,path);
-                    g.DrawArc(pen,-6,-6,12,13,0,180);
-                    g.DrawLine(pen,0,7,0,10); g.DrawLine(pen,-3,10,3,10);
-                    if (!active) g.DrawLine(pen,-7,-7,8,8);
+                    microphone.StartFigure();
+                    microphone.AddArc(-6,-6,12,13,0,180);
+                    microphone.StartFigure();
+                    microphone.AddLine(0,7,0,10);
+                    microphone.StartFigure();
+                    microphone.AddLine(-3,10,3,10);
+                    if (!active)
+                    {
+                        microphone.StartFigure();
+                        microphone.AddLine(-7,-7,8,8);
+                    }
+
+                    DrawCenteredIcon(g,pen,microphone,2f/3f);
                 }
                 else using (var brush = new SolidBrush(Color.FromArgb(246,134,149)))
                 using (var path = Theme.Rounded(new RectangleF(-4,-4,8,8),1.5f)) g.FillPath(brush,path);
             }
             g.Restore(saved);
+        }
+
+        private static void DrawCenteredIcon(Graphics g,Pen pen,GraphicsPath icon,float scale)
+        {
+            RectangleF bounds = icon.GetBounds();
+            float centerX = bounds.Left+bounds.Width/2;
+            float centerY = bounds.Top+bounds.Height/2;
+            using (var transform = new Matrix(scale,0,0,scale,-centerX*scale,-centerY*scale))
+                icon.Transform(transform);
+            g.DrawPath(pen,icon);
         }
     }
 }

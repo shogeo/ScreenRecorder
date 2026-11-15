@@ -11,4 +11,6 @@ composition and non-client-rendering suppression are no longer involved.
 
 Only the small buttons use the reference spring and optical renderer. The overlay
 has no hover-driven position/size animation, outline, ToolTips or native drop-shadow
-class flag. A brief compression remains on dismissal. Native DWM rounding is kept.
+class flag. The HUD paints its first frame under a temporary DWM cloak, then
+slides into position. It slides upward as soon as recording finalization starts. The tray
+menu retains its compression on dismissal. Native DWM rounding is kept.

@@ -71,24 +71,30 @@ namespace Recording
         internal static string TimeText(TimeSpan time) => time.TotalHours >= 1 ? time.ToString(@"hh\:mm\:ss") : time.ToString(@"mm\:ss");
         private void UpdateClock()
         {
-            if (Session.State == CaptureState.Idle) return;
+            if (Session.State != CaptureState.Starting && Session.State != CaptureState.Recording) return;
             indicator.UpdateState(Session);
             indicator.EnsureVisibleAboveAll();
         }
         private void RefreshState()
         {
-            bool idle = Session.State == CaptureState.Idle;
+            var state = Session.State;
+            bool idle = state == CaptureState.Idle;
             tray.Icon = idle ? idleIcon : recordingIcon;
-            if (idle) { indicator.SetRecordingPresence(false); indicator.HideAnimated(); }
+            if (idle || state == CaptureState.Finishing)
+            {
+                if (state == CaptureState.Finishing) indicator.UpdateState(Session);
+                indicator.SetRecordingPresence(false);
+                _ = indicator.DismissAsync();
+            }
             else
             {
                 indicator.UpdateState(Session);
                 if (lastState == CaptureState.Idle) indicator.Place(Screen.PrimaryScreen);
                 indicator.SetRecordingPresence(true);
-                if (!indicator.Visible) indicator.Show();
+                indicator.ShowForRecording();
                 indicator.EnsureVisibleAboveAll();
             }
-            lastState = Session.State; UpdateClock();
+            lastState = state;
         }
         internal async Task<bool> CopyFile(string path)
         {
@@ -125,6 +131,7 @@ namespace Recording
                 try { await Session.Completion; } catch { }
                 for (int i = 0; i < 15 && Session.LastFile != null && ClipboardFile != Session.LastFile; i++) await Task.Delay(150);
             }
+            await indicator.DismissAsync();
             Application.ExitThread();
         }
         private void SessionSwitch(object sender,SessionSwitchEventArgs e)

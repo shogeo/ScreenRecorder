@@ -5,6 +5,10 @@ namespace Recording
 {
     internal static class NativeBackdrop
     {
+        internal static readonly System.Drawing.Color WindowTint = System.Drawing.Color.FromArgb(154, 9, 13, 21);
+
+        internal static bool AllowsMotion() => !SystemParametersInfo(0x1042, 0, out bool enabled, 0) || enabled;
+
         internal static bool EnableSmoothWindowCorners(IntPtr handle)
         {
             try

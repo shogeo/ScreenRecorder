@@ -65,9 +65,19 @@ namespace Recording
         {
             nativeBlur = NativeBackdrop.EnableBackdrop(Handle,out string mode,out bool alpha);
             Region = null;
-            NativeBackdrop.EnableSmoothWindowCorners(Handle);
+            UpdateWindowCorners();
             Log.Write("Native glass surface: "+mode+"; premultiplied alpha="+alpha);
             ClearBackground();
+        }
+        private void UpdateWindowCorners()
+        {
+            if (!IsHandleCreated || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+            if (NativeBackdrop.EnableSmoothWindowCorners(Handle))
+            {
+                if (Region != null) Region = null;
+                return;
+            }
+            using (var path = Theme.Rounded(ClientRectangle, S(12))) Region = new Region(path);
         }
         protected override void WndProc(ref Message m)
         {
@@ -79,6 +89,7 @@ namespace Recording
         {
             base.OnResize(e);
             if (logicalWidth == 0 || logicalHeight == 0) return;
+            if (Region != null) UpdateWindowCorners();
             ClearBackground();
             foreach (var entry in controlLayout)
             {
@@ -107,7 +118,7 @@ namespace Recording
             using (var g = Graphics.FromImage(background))
             {
                 g.CompositingMode = CompositingMode.SourceCopy;
-                g.Clear(nativeBlur ? Color.FromArgb(154,9,13,21) : Theme.Background);
+                g.Clear(nativeBlur ? NativeBackdrop.WindowTint : Theme.Background);
             }
             backdrop = new GlassBackdrop(background);
         }
@@ -118,12 +129,18 @@ namespace Recording
             EnsureBackground();
             surface.Paint(e.Graphics,ClientSize,e.ClipRectangle,(g,clip) => {
                 g.CompositingMode = CompositingMode.SourceCopy;
-                g.DrawImageUnscaled(background,0,0);
+                g.DrawImage(background,clip,clip,GraphicsUnit.Pixel);
                 g.CompositingMode = CompositingMode.SourceOver;
                 Theme.Quality(g);
                 g.ScaleTransform(ScaleX,ScaleY);
                 PaintSurface(g);
             });
+        }
+        protected void PaintGlassNow()
+        {
+            // Paint the real redirected client and its child buttons before revealing the HWND.
+            const uint repaintClientAndChildren = 0x0001 | 0x0020 | 0x0080 | 0x0100;
+            RedrawWindow(Handle, IntPtr.Zero, IntPtr.Zero, repaintClientAndChildren);
         }
         protected abstract void PaintSurface(Graphics g);
         internal bool PaintChildBackground(Graphics g,Control child,Rectangle clip)
@@ -173,5 +190,6 @@ namespace Recording
             base.Dispose(disposing);
         }
         [DllImport("user32.dll")] private static extern uint GetDpiForSystem();
+        [DllImport("user32.dll")] private static extern bool RedrawWindow(IntPtr handle, IntPtr rect, IntPtr region, uint flags);
     }
 }
